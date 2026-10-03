@@ -9615,5 +9615,27 @@
     "tags": ["tts", "moss-ttsd", "dialogue", "multilingual", "gguf"],
     "notes": "Requires MOSS-TTS codec decoder and encoder GGUFs for dialogue synthesis.",
     "link": "https://huggingface.co/OpenMOSS-Team/MOSS-TTSD-v1.0"
+  },
+  {
+    "source": "https://huggingface.co/TuesdayCrowd/transkun-onnx/resolve/b44598166715a50d863973a8ecbbdbbb392f08d6/transkun.onnx",
+    "engine": "@qvac/transkun",
+    "description": "Transkun V2 piano transcription backbone (ONNX), used for on-device sheet music",
+    "quantization": "fp32",
+    "params": "13.6M",
+    "licenseId": "MIT",
+    "tags": ["music-transcription", "piano", "transkun", "onnx", "backbone"],
+    "notes": "Upstream Transkun by Yujia Yan (https://github.com/Yujia-Yan/Transkun, MIT). Pair with the transkun-heads.onnx entry; both files are needed.",
+    "link": "https://huggingface.co/TuesdayCrowd/transkun-onnx"
+  },
+  {
+    "source": "https://huggingface.co/TuesdayCrowd/transkun-onnx/resolve/b44598166715a50d863973a8ecbbdbbb392f08d6/transkun-heads.onnx",
+    "engine": "@qvac/transkun",
+    "description": "Transkun V2 piano transcription edge-refinement heads (ONNX), used for on-device sheet music",
+    "quantization": "fp32",
+    "params": "13.6M",
+    "licenseId": "MIT",
+    "tags": ["music-transcription", "piano", "transkun", "onnx", "heads"],
+    "notes": "Upstream Transkun by Yujia Yan (https://github.com/Yujia-Yan/Transkun, MIT). Pair with the transkun.onnx entry; both files are needed.",
+    "link": "https://huggingface.co/TuesdayCrowd/transkun-onnx"
   }
 ]
