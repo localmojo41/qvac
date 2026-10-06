@@ -64,6 +64,14 @@
   cached chat on a hybrid / recurrent model never touches the disk; `disk`
   writes them to the OS temp directory.
 
+- MTP speculative decoding, ported from llama-server: `spec-type: 'draft-mtp'`
+  (with `spec-draft-n-max`, `spec-draft-n-min`, `spec-draft-p-min`, also in
+  underscore spelling) drafts with the model's own multi-token-prediction head
+  and verifies each draft in one decode, on single prompts, multimodal prompts
+  and continuous batching, with `cacheKey` conversations. Runtime stats report
+  `draftTokens` and `draftAcceptedTokens`. Qwen3.6-27B-MTP decodes about 2.3x
+  faster on a single sequence on a Radeon 8060S.
+
 ### Changed
 
 - With `parallel >= 2`, a keyed request's committed state now stays in its
