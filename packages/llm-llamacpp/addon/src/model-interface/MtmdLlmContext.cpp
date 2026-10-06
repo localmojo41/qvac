@@ -613,6 +613,7 @@ LlmContext::EvalMessageResult MtmdLlmContext::evalMessageWithTools(
     throw qvac_errors::StatusError(
         ADDON_ID, toString(ContextOverflow), errorMsg);
   }
+  spec_.setPromptEnd(current_.pos + nPositions);
 
   snapshotPreRequestCursor();
 
@@ -1797,6 +1798,8 @@ PrefillPlan MtmdLlmContext::preparePrefill(
     throw qvac_errors::StatusError(
         ADDON_ID, toString(ContextOverflow), errorMsg);
   }
+
+  spec_.setPromptEnd(current_.pos + plan.totalPositions());
 
   // mtmd::input_chunks has a user-declared destructor and therefore no
   // move assignment; transfer the owning pointer directly.
