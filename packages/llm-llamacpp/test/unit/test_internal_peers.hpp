@@ -32,6 +32,13 @@ public:
     return model.state_ ? model.state_->batchScheduler_.get() : nullptr;
   }
 
+  /// The prompt parser (private on the model): JSON input to chat messages.
+  static ParsedPromptPayload
+  formatPrompt(LlamaModel& model, const std::string& input) {
+    std::shared_lock lock(model.stateMtx_);
+    return model.formatPrompt(input);
+  }
+
   /// The loaded single-prompt context, for driver-level accounting tests.
   /// Null before the model has loaded.
   static LlmContext* llmContext(LlamaModel& model) {
