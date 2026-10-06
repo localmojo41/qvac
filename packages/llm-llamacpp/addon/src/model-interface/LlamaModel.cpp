@@ -1079,6 +1079,10 @@ qvac_lib_inference_addon_cpp::RuntimeStats LlamaModel::jobTerminalStats(
     terminal.emplace_back(
         "stopReason", static_cast<int64_t>(*observed.stopReason));
   }
+  if (state_->llmContext_->getSpeculative() != nullptr) {
+    terminal.emplace_back("draftTokens", observed.draftTokens);
+    terminal.emplace_back("draftAcceptedTokens", observed.draftAcceptedTokens);
+  }
   return terminal;
 }
 
@@ -1634,7 +1638,7 @@ LlamaModel::batchRuntimeStatsLocked() const {
   // races a mid-decode peer. The counters are cleared instead at the
   // batch-entry epoch boundary (processPromptBatchImpl), which is
   // exclusive with respect to the scheduler.
-  return {
+  qvac_lib_inference_addon_cpp::RuntimeStats result{
       {"TTFT", stats.prefillTimeMs()},
       {"TPS", stats.decodeTokensPerSecond()},
       {"ppTPS", stats.prefillTokensPerSecond()},
@@ -1647,6 +1651,11 @@ LlamaModel::batchRuntimeStatsLocked() const {
       // per-batch value would be misattributed / racy. See singleRuntimeStats.
       {"avgConcurrentSeq", stats.avgConcurrentSeq()},
       {"backendDevice", runtimeBackendDevice_}};
+  appendSpeculativeStats(
+      result,
+      state_->llmContext_->getSpeculative() != nullptr,
+      stats.speculative);
+  return result;
 }
 
 qvac_lib_inference_addon_cpp::RuntimeStats
