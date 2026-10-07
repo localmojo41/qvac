@@ -2148,13 +2148,13 @@ test('assess: an undecided probe leaves the calibrated verdict alone', (t) => {
     platform: 'darwin-arm64',
     calibration: calibration(),
     resolveProfile: () => profile(),
-    nativeFit: { ...NATIVE_FIT, verdict: 'unknown', reason: 'disabled' }
+    nativeFit: { ...NATIVE_FIT, verdict: 'unknown', reason: 'unsupported-load' }
   })
 
   t.is(result.evidence, 'calibration')
   t.ok(result.estimate, 'the calibrated bound is still published')
   t.ok(
-    result.reasons.some((reason) => reason.includes('reached no verdict: disabled')),
+    result.reasons.some((reason) => reason.includes('reached no verdict: unsupported-load')),
     'the refusal is named beside the verdict it fell back to'
   )
 })
