@@ -1,8 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- Bare modules and @qvac/logging expose CommonJS export shapes. */
-import fs = require("bare-fs");
-import path = require("bare-path");
 import QvacLogger = require("@qvac/logging");
-import fabricBackends = require("@qvac/fabric/backends");
 /* eslint-enable @typescript-eslint/no-require-imports */
 import {
   QvacResponse,
@@ -29,22 +26,6 @@ import { IndicProcessor } from "./third-party/indic-processor";
 const BERGAMOT_TARGET_TOKEN_BY_PAIR: Record<string, string> = {
   "en:pt": ">>por<<",
 };
-
-// The ggml compute backends (GGML_BACKEND_DL modules) ship exactly once, next to
-// the @qvac/fabric runtime (<root>/<host>/qvac__fabric). We deliberately do not
-// copy them into this addon to avoid duplicating tens of MB per fabric
-// consumer. On desktop, @qvac/fabric/backends resolves that root in whichever
-// package holds the runtime. On mobile the package tree isn't resolvable at
-// runtime (the worklet runs from a packed bundle), so fall back to this addon's
-// own prebuilds, where the mobile packaging stages the backends. The native side
-// appends BACKENDS_SUBDIR ("<host>/qvac__fabric") to whichever root we return.
-function resolveBackendsDir(): string {
-  // fabric's resolver only checks that the platform package resolves, not that
-  // its prebuilds are on disk.
-  const fabricRoot = fabricBackends.resolveBackendsDir();
-  if (fabricRoot !== null && fs.existsSync(fabricRoot)) return fabricRoot;
-  return path.join(__dirname, "prebuilds");
-}
 
 interface QvacResponseHandlers {
   cancelHandler: () => Promise<void>;
@@ -467,10 +448,6 @@ const TranslationNmtcpp: TranslationNmtcppConstructor = class TranslationNmtcpp 
     delete otherConfig.gpuDevice;
     delete otherConfig.opOffloadMinBatch;
 
-    if (otherConfig.backendsDir === undefined) {
-      otherConfig.backendsDir = resolveBackendsDir();
-    }
-
     const configurationParams: TranslationConfigurationParams = {
       path: this._files.model,
       config: otherConfig,
@@ -772,9 +749,8 @@ namespace TranslationNmtcpp {
 
     /**
      * Path to the directory containing backend shared libraries
-     * (libqvac-ggml-vulkan.so, etc.). Defaults to the root `@qvac/fabric/backends`
-     * resolves on desktop, falling back to this package's `prebuilds/` on mobile where
-     * the package tree isn't resolvable from the packed worklet.
+     * (libqvac-ggml-vulkan.so, etc.). Defaults to the ones @qvac/fabric ships,
+     * which it locates itself next to its runtime.
      */
     backendsDir?: string;
 

@@ -21,10 +21,9 @@ export interface AddonConfigurationParams {
     path: string;
     config: GGMLConfig;
     /**
-     * Root the native side searches for ggml compute backends, with
-     * BACKENDS_SUBDIR ("<host>/qvac__fabric") appended. Defaults to the root
-     * `@qvac/fabric/backends` resolves on desktop, falling back to this
-     * addon's own `prebuilds/` on mobile.
+     * Directory holding the ggml compute backend modules, overriding the ones
+     * @qvac/fabric ships. Empty (the default) lets fabric load its own, which
+     * it locates next to its runtime on every platform.
      */
     backendsDir?: string;
 }
@@ -81,7 +80,6 @@ export type MappedAddonEvent = {
  * event names (caller logs and skips dispatch).
  */
 export declare function mapAddonEvent(rawEvent: unknown, rawData: unknown, rawError: unknown): MappedAddonEvent | null;
-export declare function resolveBackendsDir(): string;
 /** An interface between the Bare C++ addon and the JS runtime. */
 export declare class BertInterface implements Addon {
     private readonly _binding;

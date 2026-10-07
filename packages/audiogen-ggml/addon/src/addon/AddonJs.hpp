@@ -744,7 +744,7 @@ inline js_value_t* assessFit(js_env_t* env, js_callback_info_t* info) try {
   options.lm_model_path = text("lmPath");
   options.dit_model_path = text("ditPath");
   options.vae_model_path = text("vaePath");
-  options.backends_dir = resolveBackendsDir(text("backendsDir"));
+  options.backends_dir = resolveBackendsDir(text("backendsDir")).string();
   integer("gpuLayers", options.n_gpu_layers);
   integer("threads", options.n_threads);
   integer("textTokens", options.text_tokens);

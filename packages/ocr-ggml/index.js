@@ -2,10 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ERR_CODES = exports.QvacErrorAddonOcrGgml = exports.OcrGgml = void 0;
 /* eslint-disable @typescript-eslint/no-require-imports -- Bare modules and @qvac/logging expose CommonJS export shapes. */
-const path = require("bare-path");
 const fs = require("bare-fs");
 const QvacLogger = require("@qvac/logging");
-const fabricBackends = require("@qvac/fabric/backends");
 /* eslint-enable @typescript-eslint/no-require-imports */
 const infer_base_1 = require("@qvac/infer-base");
 const ocr_ggml_1 = require("./ocr-ggml");
@@ -21,22 +19,6 @@ const DOCTR_INTERNAL_LANG_LIST = ["en"];
  * create-time failures to ERR_CODES.UNSUPPORTED_LANGUAGE.
  */
 const NATIVE_LANGUAGE_ERROR = /unsupported languages|only compatible with english/i;
-// The ggml compute backends (GGML_BACKEND_DL modules) ship exactly once, next to
-// the @qvac/fabric runtime (<root>/<host>/qvac__fabric). We deliberately do not
-// copy them into this addon to avoid duplicating tens of MB per fabric
-// consumer. On desktop, @qvac/fabric/backends resolves that root in whichever
-// package holds the runtime. On mobile the package tree isn't resolvable at
-// runtime (the worklet runs from a packed bundle), so fall back to this addon's
-// own prebuilds, where the mobile packaging stages the backends. The native side
-// appends BACKENDS_SUBDIR ("<host>/qvac__fabric") to whichever root we return.
-function resolveBackendsDir() {
-    // fabric's resolver only checks that the platform package resolves, not that
-    // its prebuilds are on disk.
-    const fabricRoot = fabricBackends.resolveBackendsDir();
-    if (fabricRoot !== null && fs.existsSync(fabricRoot))
-        return fabricRoot;
-    return path.join(__dirname, "prebuilds");
-}
 /**
  * GGML-backed OCR implementation.
  *
@@ -177,10 +159,9 @@ class OcrGgml {
                 configurationParams[field] = this.params[field];
             }
         }
-        configurationParams.backendsDir =
-            this.params.backendsDir !== undefined
-                ? this.params.backendsDir
-                : resolveBackendsDir();
+        if (this.params.backendsDir !== undefined) {
+            configurationParams.backendsDir = this.params.backendsDir;
+        }
         this.logger.info("Creating ocr-ggml addon");
         try {
             this.addon = this._createAddon(configurationParams);

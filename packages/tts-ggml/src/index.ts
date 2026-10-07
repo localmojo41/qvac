@@ -29,7 +29,6 @@ import {
 } from "./tts";
 import * as errorModule from "./lib/error";
 import { buildPocketParams } from "./lib/pocketConfig";
-import { resolveBackendsDir as resolveBackendsDirImpl } from "./lib/backends";
 import {
   assessFit as assessFitImpl,
   type Audio8FitRequest,
@@ -1014,7 +1013,11 @@ interface TTSGgmlOptions
    * streaming (batch synthesis only).
    */
   denoiser?: LavaSRDenoiserOptions;
-  /** Directory the addon scans for dynamically loaded ggml backends. */
+  /**
+   * Directory the addon scans for dynamically loaded ggml backends, as given.
+   * Unset scans the addon's own: the one its platform package or the app
+   * installed next to the native module.
+   */
   backendsDir?: string;
   /** Directory where ggml-opencl persists its compiled program binary. */
   openclCacheDir?: string;
@@ -2589,7 +2592,6 @@ class TTSGgml {
     this._backendsDir = firstNonEmpty(
       options.backendsDir,
       this._config.backendsDir,
-      resolveBackendsDirImpl(),
     );
     this._openclCacheDir = firstNonEmpty(
       options.openclCacheDir,
@@ -5070,7 +5072,6 @@ namespace TTSGgml {
   export type MossFitRequest = NamespaceMossFit;
   export type CosyvoiceFitRequest = NamespaceCosyvoiceFit;
 
-  export const resolveBackendsDir = resolveBackendsDirImpl;
   export const assessFit = assessFitImpl;
 }
 
