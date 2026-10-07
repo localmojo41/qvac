@@ -157,6 +157,20 @@ runs:
         echo "Setting up mobile test framework..."
         npm install
 
+    # A split addon (the one under test, or one it depends on such as
+    # @qvac/fabric) routes its runtime through cross-built platform packages,
+    # which npm never selects, so the app depends on them directly like any
+    # mobile app would. Must run before "Build test app with addon", which
+    # installs the addon and bundles for android-arm64 and ios-arm64 in one go.
+    - name: Install mobile platform packages
+      shell: bash
+      working-directory: ./test-framework
+      env:
+        ADDON_WORKDIR: ${{ inputs.addon-workdir }}
+      run: |
+        node "$GITHUB_ACTION_PATH/install-platform-packages.mjs" \
+          --app-dir . --addon-dir "${GITHUB_WORKSPACE}/addon/${ADDON_WORKDIR}"
+
     - name: Build test app with addon
       shell: bash
       working-directory: ./test-framework
@@ -171,18 +185,6 @@ runs:
           exit 1
         fi
         echo "Test app built successfully"
-
-    # A split addon the framework installed (e.g. @qvac/fabric) routes its
-    # runtime through a cross-built platform package, which npm never selects,
-    # so the app depends on it directly like any mobile app would. Must run
-    # after the framework installs the addon and before `npm run bundle` and
-    # the native project build.
-    - name: Install mobile platform packages
-      shell: bash
-      working-directory: ./test-framework
-      env:
-        PLATFORM: ${{ inputs.platform }}
-      run: node "$GITHUB_ACTION_PATH/install-platform-packages.mjs" --platform "$PLATFORM"
 
     # Patches the freshly generated e2e/tests/app.test.js to bump the
     # per-test Mocha ceiling. Two ways to opt in:
