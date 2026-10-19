@@ -19,9 +19,14 @@ export type ResourceValue =
   ConstRef | AssetRef | PackageAssetRef | ResourceValue[] | { [key: string]: unknown }
 
 export interface ResourceEntry {
-  /** Platforms that define this key. Absent means every platform. */
+  /**
+   * Platforms that define this key; absent means every platform. Matched by segment prefix, so
+   * `electron` does not cover the Snap (`snap-linux`) -- name `snap` too.
+   */
   on?: string[]
   constant?: ConstRef
+  /** Use the catalog source URL when the test explicitly selects another compatible engine. */
+  constantSourceOnly?: boolean
   modelSrc?: string
   type?: string
   config?: Record<string, unknown>
@@ -36,9 +41,9 @@ export interface ResourceEntry {
    */
   skipPreDownload?: boolean
   /**
-   * Platforms that skip the pre-download for this entry while still defining it. A leg that never
-   * loads the model still needs the definition -- `assessModelFit` describes a load without
-   * running it -- but must not pay for the weights.
+   * Platforms that skip the pre-download for this entry while still defining it: a leg that never
+   * loads the model still needs the definition, but must not pay for the weights. Named by app
+   * family, as `on` is.
    */
   skipPreDownloadOn?: string[]
 }

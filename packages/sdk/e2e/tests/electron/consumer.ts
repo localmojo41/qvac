@@ -1,3 +1,5 @@
+import { SpeakerAwareExecutor } from '../shared/executors/node/speaker-aware-executor.js'
+import { DecisionExecutor } from '../shared/executors/decision-executor.js'
 import { RpcServerExecutor } from '../shared/executors/rpc-server-executor.js'
 import * as os from 'node:os'
 import mqtt from 'mqtt'
@@ -12,6 +14,7 @@ import {
   startNodeMemoryPoller,
   type TestDefinition
 } from '@qvac/test-suite'
+import { createStepBindings } from '../shared/step-bindings.js'
 import { profiler } from '@qvac/sdk'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -50,7 +53,6 @@ import { DownloadResilienceExecutor } from '../shared/executors/node/download-re
 import { LifecycleExecutor } from '../shared/executors/lifecycle-executor.js'
 import { SystemResourcesExecutor } from '../shared/executors/system-resources-executor.js'
 import { ConfigExecutor } from '../shared/executors/config-executor.js'
-import { MultiGpuExecutor } from '../shared/executors/multi-gpu-executor.js'
 import { BatchCompletionExecutor } from '../shared/executors/batch-completion-executor.js'
 import { NodeCancellationExecutor } from '../shared/executors/node/cancellation-executor.js'
 import { PluginExecutor } from '../shared/executors/plugin-executor.js'
@@ -71,10 +73,12 @@ function resolveTableAsset(kind: string, file: string): string {
 // -- see tests/shared/platform-policy.ts.
 const resources = new ResourceManager(policyFor('electron'))
 
-// One table, shared with every other client, applied here.
+// One table, shared with every other client, applied here. The runner owns the label this leg
+// registers with and publishes it, so the table and the skip decisions cannot disagree. Without
+// it -- a framework older than the runner change -- both fall back to the bare family.
 applyResourceTable(
   RESOURCE_TABLE,
-  'electron',
+  process.env['QVAC_TEST_PLATFORM'] ?? 'electron',
   (dep, definition) => resources.define(dep, definition as never),
   {
     const: (name) => (MODEL_CONSTANTS as Record<string, unknown>)[name],
@@ -143,8 +147,12 @@ export async function runSnapRefreshProbe() {
 // runs outside Snap.
 const snapStorageHandler = new SnapStorageExecutor()
 
+const stepBindings = createStepBindings(resources)
+
 export const executor = createExecutor({
   handlers: [
+    new SpeakerAwareExecutor(resources),
+    new DecisionExecutor(resources),
     snapStorageHandler,
     // What Electron excludes -- resource-heavy suites, and anything that asserts on worker
     // processes outside the packaged app lifecycle -- is declared in the catalog now; see
@@ -190,7 +198,6 @@ export const executor = createExecutor({
     new RpcServerExecutor(),
     new SystemResourcesExecutor(),
     new ConfigExecutor(),
-    new MultiGpuExecutor(resources),
     new NodeCancellationExecutor(resources),
     new PluginExecutor(resources)
   ],
@@ -199,6 +206,9 @@ export const executor = createExecutor({
     exportData: () => profiler.exportJSON()
   }
 })
+
+// A definition carrying `steps` is run by the shared interpreter instead of the executor above.
+executor.stepBindings = stepBindings
 
 export async function startElectronConsumer() {
   const runId = process.env['QVAC_TEST_RUN_ID']

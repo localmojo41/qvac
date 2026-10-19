@@ -13,6 +13,14 @@ type Rule = {
 }
 
 const RULES: Rule[] = [
+  {
+    match: /^tts-moss-/,
+    skip: {
+      reason:
+        'MOSS-SoundEffect and MOSS-Speech require desktop GPU memory; the Python client has no MOSS step bindings.',
+      platforms: ['mobile', 'desktop-python']
+    }
+  },
   // ── every leg but Snap ───────────────────────────────────────────────────
   {
     match: /^snap-storage-/,
@@ -79,6 +87,22 @@ const RULES: Rule[] = [
       platforms: ['electron', 'snap']
     }
   },
+  {
+    match: /^tts-moss-/,
+    skip: {
+      reason:
+        'The packaged Electron pass, Snap included, skips MOSS: its 13.5 GiB model set is desktop-only',
+      platforms: ['electron', 'snap']
+    }
+  },
+  {
+    match: ['tools-simple-function-gemma4'],
+    skip: {
+      reason:
+        'The packaged Electron pass, Snap included, skips the Gemma4 tool dialect: its 3.22 GiB model is desktop-only',
+      platforms: ['electron', 'snap']
+    }
+  },
 
   // ── mobile, both OSes ────────────────────────────────────────────────────
   {
@@ -98,17 +122,17 @@ const RULES: Rule[] = [
     }
   },
   {
-    match: /^multi-gpu-/,
-    skip: {
-      reason: 'Multi-GPU tests disabled on mobile (not supported on single-GPU devices)',
-      platforms: ['mobile']
-    }
-  },
-  {
     match: /^deferred-tools-(?!prompt-cost$|load-then-call$)/,
     skip: {
       reason:
         'Deferred tools: only the smoke cases run on mobile (no tools-qwen35 resource, model reloads too slow)',
+      platforms: ['mobile']
+    }
+  },
+  {
+    match: ['kv-cache-warm-tool-choice-required'],
+    skip: {
+      reason: 'The forced tool call reasons past the Device Farm test timeout',
       platforms: ['mobile']
     }
   },
@@ -149,7 +173,7 @@ const RULES: Rule[] = [
   {
     match: /^bci-/,
     skip: {
-      reason: 'BCI addon tests are desktop-only until mobile support is enabled',
+      reason: 'BCI addon tests are disabled on mobile until mobile support is enabled',
       platforms: ['mobile']
     }
   },
@@ -157,7 +181,7 @@ const RULES: Rule[] = [
     match: /^parakeet-indic-conformer-/,
     skip: {
       reason:
-        'Indic Conformer e2e is desktop-only; the parakeet-indic-conformer resource is not defined on mobile',
+        'Indic Conformer e2e does not run on mobile: the parakeet-indic-conformer resource is not defined there',
       platforms: ['mobile']
     }
   },
@@ -172,7 +196,7 @@ const RULES: Rule[] = [
     match: /^(ocr-doctr-|model-load-ocr-doctr$)/,
     skip: {
       reason:
-        'DocTR OCR e2e is desktop-only; the pipeline/detector auto-derivation under test (QVAC-22514) is server-side Bare code identical across platforms, and the doctr resource is not defined on mobile',
+        'DocTR OCR e2e does not run on mobile: the pipeline/detector auto-derivation under test (QVAC-22514) is server-side Bare code identical across platforms, and the doctr resource is not defined there',
       platforms: ['mobile']
     }
   },
@@ -191,9 +215,28 @@ const RULES: Rule[] = [
     }
   },
 
+  // ── the RPC server ───────────────────────────────────────────────────────
+  {
+    match: /^rpc-server-(?!device-map)/,
+    skip: {
+      reason:
+        'The strict-confined Snap has no libibverbs.so.1, so startRpcServer refuses before any of these reaches the SDK',
+      platforms: ['snap']
+    }
+  },
+
+  // ── the OCR GPU-selection check ──────────────────────────────────────────
+  {
+    match: /^ocr-main-gpu-/,
+    skip: {
+      reason:
+        'The plugin strips main-gpu on single-GPU devices, and the ocr-main-gpu resource is desktop, Electron and Snap only',
+      platforms: ['mobile', 'desktop-python']
+    }
+  },
+
   // ── model fit ────────────────────────────────────────────────────────────
-  // The assessment describes a load without running one, so it runs everywhere. The probe
-  // reads the projection back off a resident model, so it only runs where that model loads.
+  // The assessment needs no load and runs everywhere; the probe reads a resident model.
   {
     match: /^model-fit-(?:probe-)?(?:audiogen|diffusion)$/,
     skip: {
@@ -214,7 +257,7 @@ const RULES: Rule[] = [
     match: ['model-fit-probe-bci'],
     skip: {
       reason:
-        'BCI is desktop-only until mobile support is enabled; the assessment needs no load and still runs',
+        'BCI is disabled on mobile until mobile support is enabled; the assessment needs no load and still runs',
       platforms: ['mobile']
     }
   },
@@ -283,22 +326,9 @@ const RULES: Rule[] = [
     }
   },
   {
-    match: [
-      'ocr-sign-image',
-      'ocr-chart-image',
-      'ocr-no-text-image',
-      'ocr-large-image',
-      'ocr-low-quality',
-      'ocr-mixed-language',
-      'ocr-single-language',
-      'ocr-blurry-text',
-      'ocr-horizontally-inverted',
-      'ocr-vertically-inverted',
-      'ocr-misaligned-text',
-      'ocr-multi-sized-text',
-      'ocr-multiple-fonts',
-      'addon-logging-ocr'
-    ],
+    // The whole family: the app was jetsammed at 1892 MB, and evicting the model did not bring
+    // the footprint down, so listing ids individually only moved where the leg died.
+    match: /^(ocr-|addon-logging-ocr$)/,
     skip: { reason: 'OCR disabled on iOS (ONNX/CoreML OOM)', platforms: ['mobile-ios'] }
   }
 ]
