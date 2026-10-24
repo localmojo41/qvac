@@ -69,7 +69,7 @@ export async function decodeAudioToStream(
         error.specifier === 'bare-ffmpeg'
       ) {
         throw new ConfigValidationFailedError(
-          'Encoded audio requires bare-ffmpeg. Enable includeAudioDecoder and rebuild the bundle, or provide raw PCM audio.',
+          'Encoded audio requires bare-ffmpeg. Set includeAudioDecoder: true, remove --defer bare-ffmpeg, and rebuild the bundle, or provide raw PCM audio.',
           error
         )
       }

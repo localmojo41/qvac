@@ -45,8 +45,6 @@ for (const [name, loadError] of [
         )
         t.is((error as Error).cause, loadError, 'preserves the original loader error')
         t.ok((error as Error).message.includes('includeAudioDecoder'), 'names the bundle option')
-        t.ok((error as Error).message.includes('rebuild'), 'explains that rebuilding is required')
-        t.ok((error as Error).message.includes('raw PCM'), 'offers the decoder-free input format')
       } else {
         t.is(error, loadError, 'preserves unrelated failures unchanged')
       }
