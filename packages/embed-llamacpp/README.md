@@ -19,6 +19,7 @@ It also runs [Laya](https://github.com/NandhaKishorM/laya) decision models throu
   - [7. Release Resources](#7-release-resources)
 - [API behavior by state](#api-behavior-by-state)
 - [Laya decision models](#laya-decision-models)
+- [Rerankers](#rerankers)
 - [Assessing fit](#assessing-fit)
 - [Vector index](#vector-index)
 - [Quickstart Example](#quickstart-example)
@@ -106,6 +107,7 @@ const args = {
 The `args` obj contains the following properties:
 
 * `files.model`: An array of absolute paths to the model file(s) on disk. For sharded models, provide all shard paths.
+* `files.projectionModel` (optional): Absolute path to the projection model (mmproj) of a multimodal embedding model such as EmbeddingGemma 2. With it, `run()` also embeds images and audio (see [Embed images and audio](#embed-images-and-audio)).
 * `config`: A dictionary of hyper-parameters used to tweak the behaviour of the model (see [Create `config`](#3-create-config) below).
 * `logger`: This property is used to create a [`QvacLogger`](../logging) instance, which handles all logging functionality.
 * `opts.stats`: This flag determines whether to calculate inference stats.
@@ -154,13 +156,24 @@ The `config` is a plain JS object whose keys are forwarded directly to the nativ
 | `ctx_size`       | string of integer                             | model's trained context size (`n_ctx_train`) | Runtime context window in tokens (llama.cpp `n_ctx`); oversized values are capped to the model's trained context |
 | `poll`           | string of integer `"0"`–`"100"`             | `"0"`         | Main GGML threadpool busy-wait level. `"0"` sleeps while idle; higher values can reduce wake latency but consume CPU during GPU work |
 | `poll-batch`     | string of integer `"0"`–`"100"`             | `poll`          | Batch GGML threadpool busy-wait level                                                     |
-| `pooling`        | `"none"` \| `"mean"` \| `"cls"` \| `"last"` \| `"rank"` | model default | Pooling strategy used to collapse token embeddings into a single sequence vector        |
+| `pooling`        | `"none"` \| `"mean"` \| `"cls"` \| `"last"`         | model default | Pooling strategy used to collapse token embeddings into a single sequence vector. Rank pooling (rerankers) returns scores, not embeddings: the load fails with `UnsupportedEmbeddings`; use [`Reranker`](#rerankers) |
 | `attention`      | `"causal"` \| `"non-causal"`                  | model default | Attention type                                                                            |
 | `embd_normalize` | string of integer                             | `"2"`         | Embedding normalization (`-1` = none, `0` = max abs int16, `1` = taxicab, `2` = euclidean, `>2` = p-norm) |
 | `flash_attn`     | `"on"` \| `"off"` \| `"auto"`                 | `"auto"`      | Enable / disable flash attention                                                         |
 | `main-gpu`       | string of integer \| `"integrated"` \| `"dedicated"` | —      | GPU selection for multi-GPU systems                                                      |
 | `backend`        | comma-separated list of `cuda`, `vulkan`, `metal`, `opencl`, or `auto` | N/A | Overrides which GPU backend is used, in priority order (e.g. `"cuda,vulkan"`). `auto` means no preference. An unrecognised name is rejected; a recognised one with no device present is skipped. Use `device: "cpu"` to run on CPU. Cannot be combined with `split-mode` |
 | `verbosity`      | string of `"0"`–`"3"` (0=ERROR, 1=WARNING, 2=INFO, 3=DEBUG) | `"0"` | Native logging verbosity. The `addonLogging.setLogger` callback receives only messages at or above this threshold. Use `"2"` for llama.cpp INFO logs and `"3"` for DEBUG logs. The verbosity level is process-global and is updated each time a model is constructed, so the most recently constructed model's `config.verbosity` wins for all subsequent native log dispatch. |
+
+These keys apply with [`files.projectionModel`](#embed-images-and-audio), with the names and spellings `@qvac/llm-llamacpp` uses (each also accepts its underscore form, e.g. `image_max_tokens`). Set without `files.projectionModel`, any of them fails the load with `InvalidConfiguration`:
+
+| Key                    | Range / Type                         | Default | Description |
+|------------------------|--------------------------------------|---------|-------------|
+| `image-max-tokens`     | string of positive integer           | projector default (1120 for EmbeddingGemma 2) | Largest per-image token budget of a dynamic-resolution vision encoder. Lower it to embed larger or more images per input within `batch_size`, or to save compute on phones |
+| `image-min-tokens`     | string of positive integer           | projector default (70 for EmbeddingGemma 2) | Smallest per-image token budget. Must not exceed `image-max-tokens` |
+| `mmproj-no-audio`      | `"true"`/`"on"`/`"1"` or `"false"`/`"off"`/`"0"` | `"false"` | Skip loading the projector's audio encoder, for image-only use. Audio input is then rejected with `UnsupportedMedia` |
+| `mmproj-use-gpu`       | `"true"`/`"on"`/`"1"` or `"false"`/`"off"`/`"0"` | auto | Run the projector on the GPU. Unset, it follows the model, except on Android GPUs below Adreno 800 (Mali, older Adreno), where it runs on the CPU, as in `@qvac/llm-llamacpp`. Ignored with a warning when the model runs on the CPU |
+| `image-max-megapixels` | string of positive integer           | `"50"`  | Largest image accepted, read from its header before decoding. A larger one is rejected with `UnsupportedMedia` |
+| `audio-max-seconds`    | string of positive integer           | `"600"` | Longest audio accepted, read from its headers (WAV, FLAC) or frames (MP3) before decoding, which bounds the decoded samples. Longer audio, or audio whose length cannot be read (e.g. FLAC without a sample count), is rejected with `UnsupportedMedia`. Not in `@qvac/llm-llamacpp` |
 
 #### Native addon logging
 
@@ -218,6 +231,47 @@ const embeddings = await response.await()
 ```
 
 When `opts.stats` is enabled, `response.stats` includes runtime metrics such as `total_tokens`, `total_time_ms`, `tokens_per_second`, `context_size`, `trained_context_size`, and `backendDevice` (`"cpu"` or `"gpu"`). `context_size` is the active runtime llama context size, while `trained_context_size` is the model's trained context size. `backendDevice` reflects the resolved device used at runtime after backend selection/fallback logic, not only the requested config.
+
+#### Embed images and audio
+
+A multimodal embedding model, such as EmbeddingGemma 2, maps text, images and audio into one vector space. Load it with its projection model, then pass `{ inputs: [...] }`: each input is a string, or an array of parts in order, with strings for text and `{ media: Uint8Array }` for the bytes of an image (jpg, png, bmp, gif, ...) or of wav/mp3/flac audio.
+
+```js
+const model = new GGMLBert({
+  files: { model: [modelPath], projectionModel: mmprojPath },
+  config: { device: 'gpu', gpu_layers: '99' }
+})
+await model.load()
+
+// One embedding per input
+const response = await model.run({
+  inputs: [
+    'task: search result | query: waterproof trail running shoes',
+    ['title: none | text: ', { media: imageBytes }],
+    [{ media: audioBytes }]
+  ]
+})
+const [embeddings] = await response.await()
+```
+
+`run()` takes:
+
+| Input | Embeddings |
+|-------|------------|
+| `string` | one |
+| `string[]` | one per string |
+| `{ inputs: [...] }`, each a string or an array of parts | one per input |
+
+Media goes only in `{ inputs }`. A bare array is always one embedding per string, so an array holding `{ media }` is rejected with a `TypeError` rather than read as a single input.
+
+Notes:
+
+* Inputs without media use the text path, so a model loaded with a projection model still embeds plain text as before.
+* Media input without `files.projectionModel` is rejected.
+* Each multimodal input is decoded in one pass, so its text and media tokens together must fit in `batch_size` (which is also the micro-batch size). With EmbeddingGemma 2 a large image takes up to 1120 tokens, so two of them in one input need a larger `batch_size` or a lower `image-max-tokens` (see the projector options under [Create `config`](#3-create-config)).
+* Images: the formats stb_image reads (JPEG, PNG including 16-bit, grayscale and alpha, BMP, GIF's first frame, TGA, PSD, HDR, PNM). Audio: WAV, MP3 and FLAC, resampled to the model's rate. TIFF, HEIC, JPEG 2000, WebP, AAC/M4A, AIFF and Ogg are rejected with `UnsupportedMedia`.
+* Task prompts such as `task: search result | query: ` are plain text. Add them as the model's documentation describes.
+* Video input is not supported.
 
 ### 7. Release Resources
 
@@ -368,6 +422,74 @@ llama-quantize laya-multilingual-f16.gguf laya-multilingual-Q8_0.gguf Q8_0
 - `confidence` and `answer_confidence` are not calibrated for `laya-multilingual`, which ships without calibration temperatures. Choose any threshold you act on from measurements on your own data.
 - laya's Python-only features are not part of this class: automatic checkpoint routing (`Router`), long documents (`predict_long`), `predict_shortlist`, schema-driven `decide`, hooks and per-language temperatures.
 
+## Rerankers
+
+`Reranker` scores documents by how relevant each is to a query, with a reranker (cross-encoder) GGUF such as bge-reranker, jina-reranker or Qwen3-Reranker. Each document is read together with the query, which makes the scores more accurate than comparing embeddings, and slower: a typical use is to retrieve candidates with embeddings and a vector index (such as `IdMapIndex` from `@qvac/turbovec-ggml`), then rerank the top few. It pairs the query with each document as llama-server's `/rerank` does, using the model's `rerank` chat template when it has one, and the scores match fabric's `llama-embedding --pooling rank`.
+
+An embedding model cannot rerank: `GGMLBert` rejects rank pooling, and `Reranker` rejects a GGUF that declares another pooling or has no classifier head.
+
+### Usage
+
+```js
+const { Reranker } = require('@qvac/embed-llamacpp')
+
+const reranker = new Reranker({
+  files: { model: ['/models/jina-reranker-v1-tiny-en-f16.gguf'] },
+  config: { device: 'gpu', gpu_layers: '99' }
+})
+await reranker.load()
+
+const response = await reranker.run({
+  query: 'Machine learning is',
+  documents: [
+    'A machine is a physical system that uses power to apply forces.',
+    'Machine learning is a field of study in artificial intelligence.',
+    'Paris est la capitale de la France.'
+  ]
+})
+const [scores] = await response.await()
+// One score per document, in the order given; higher is more relevant.
+const ranked = scores.map((score, index) => ({ index, score })).sort((a, b) => b.score - a.score)
+
+await reranker.unload()
+```
+
+`load()`, `run()`, `cancel()` and `unload()` behave as in `GGMLBert`, including [API behavior by state](#api-behavior-by-state).
+
+A score is the model's raw classifier output: a logit for most rerankers, a probability for Qwen3-Reranker. Compare scores from one model; they are not on a common scale across models. All documents of a request are scored in as few forward passes as `batch_size` allows.
+
+### Config
+
+Only these keys are accepted, multi-word ones in either spelling; anything else fails at load with `InvalidConfiguration`, because pooling, context size and the other context settings are fixed by the scoring setup.
+
+| Key | Values | Default | Description |
+|-----|--------|---------|-------------|
+| `device` | `"gpu"` \| `"cpu"` | — (required) | Device to run on |
+| `gpu_layers` | string of integer | all layers, fewer if memory is short | Layers to offload to the GPU |
+| `batch_size` | string of integer | `"2048"` | Tokens per forward pass. Each document, together with the query, must fit |
+| `threads`, `threads-batch` | string of integer | one per physical core | CPU threads, at most the device's CPU count; `"0"` uses every CPU |
+| `poll`, `poll-batch` | string of integer `"0"`–`"100"` | `"0"`, `poll` | GGML threadpool busy-wait levels, as in [`config`](#3-create-config) |
+| `flash_attn` | `"on"` \| `"off"` \| `"auto"` | `"auto"` | Flash attention |
+| `backend`, `main-gpu`, `split-mode`, `tensor-split` | | | GPU selection and multi-GPU split, as in [`config`](#3-create-config) |
+| `verbosity`, `openclCacheDir` | | | As in [`config`](#3-create-config) |
+
+With `opts: { stats: true }`, `response.stats` holds `total_tokens`, `total_time_ms`, `documents`, `forward_passes`, `batch_size`, `context_size` and `backendDevice`.
+
+### Errors
+
+`load()` rejects with an error whose `code` names the cause:
+
+| `code` | When |
+|--------|------|
+| `[ GTE :: InvalidArgument ]` | `device` is missing |
+| `[ GTE :: InvalidConfiguration ]` | A key outside the list above, or a thread count that is not a whole number or exceeds the CPU count |
+| `[ GTE :: UnsupportedModel ]` | The GGUF is not a reranker: it declares a pooling other than rank (an embedding model), or has no classifier head (for example a chat model). Detected before its weights load |
+| `[ GTE :: UnableToLoadMetadata ]`, `[ GTE :: UnableToLoadModel ]` | The file cannot be read or loaded |
+
+A reranker GGUF that declares no pooling at all, as many converted cross-encoders do, is accepted. The classifier-head check reads the GGUF files from disk, so a model streamed in shards is not checked.
+
+`run()` throws a `TypeError` when the request is not `{ query: string, documents: string[] }`, and otherwise rejects with an error that carries only a `message`: a document that with the query is longer than `batch_size` (`increase batch_size`) or than the model's trained context, a failed forward pass (`llama_decode failed`), or `Job cancelled` after `cancel()`.
+
 ## Assessing fit
 
 `assessFit` projects a load against the memory free right now. It reads GGUF metadata and never weight data, so the registry's weightless copy of a model answers the same as the model itself and the projection can run before anything is downloaded.
@@ -382,6 +504,7 @@ const fit = await EmbedLlamacpp.assessFit({
 
 fit.status // 'fits' | 'does-not-fit' | 'error'
 fit.reason // 'fits', 'does-not-fit', 'model-unreadable', 'no-backend-device' or 'unsupported-config'
+fit.message // with status 'error': what caused it, e.g. the refused config key
 fit.gpuLayers // what fits, which is not always what the request asked for
 fit.ctxSize
 fit.devices // one row per device the model was assigned to, then a `host` row
@@ -389,7 +512,9 @@ fit.deviceBytes // model, context and compute summed across the devices, host ex
 fit.hostBytes // the same, for the trailing host row
 ```
 
-`config` is the load, exactly as `loadModel` takes it. The projection resolves it with the same code that load runs, so every setting reaches the fitter the way it would reach the engine, and a load the engine would refuse is refused here as `status: "error"` with `unsupported-config`. A setting left out takes llama's default.
+A multimodal load is refused with `unsupported-config`: pass its `projectionModel` (or projector options in `config`), and the projection does not count the projector's weights and buffers, so it would otherwise answer for the text model alone.
+
+`config` is the load, exactly as `loadModel` takes it. The projection resolves it with the same code that load runs, so every setting reaches the fitter the way it would reach the engine, and a load the engine would refuse is refused here as `status: "error"` with `unsupported-config`, and `message` names the setting and why. A setting left out takes llama's default.
 
 Pinning `gpu-layers` fixes the placement: the fitter refuses to move layers off a device the load claimed, so the answer is whether that exact placement fits, never a reduced one. Leave it unset for a projection that can place the model itself.
 
@@ -405,7 +530,7 @@ A model the fitter cannot read resolves to `status: "error"`; only a broken requ
 
 The `IdMapIndex` vector index, including TurboVec storage, lives in
 [`@qvac/turbovec-ggml`](https://github.com/tetherto/qvac/tree/main/packages/turbovec-ggml). Pair it with `GGMLBert`
-embeddings for retrieval; see [RAG with TurboVec](./examples/ragWithTurboVec.js).
+embeddings for retrieval.
 
 ## Quickstart Example
 
@@ -428,16 +553,8 @@ npm run quickstart
 
 - [Batch Inference](./examples/batchInference.js) – Demonstrates running multiple prompts at once using batch inference.
 - [Native Logging](./examples/nativelog.js) – Demonstrates C++ addon logging integration.
-- [RAG with TurboVec](./examples/ragWithTurboVec.js) – Embeds document chunks, retrieves relevant context with `IdMapIndex` from `@qvac/turbovec-ggml`, and prepares it for an LLM.
+- [Rerank](./examples/rerank.js) – Ranks documents by relevance to a query with a reranker GGUF: `bare examples/rerank.js /path/to/reranker.gguf`.
 - [Laya Decisions](./examples/layaDecisions.js) – Answers `choice`, `score` and `noul` questions about a support ticket, then about several tickets in one call. Takes the path to a Laya GGUF: `bare examples/layaDecisions.js /path/to/laya-multilingual-Q8_0.gguf`.
-
-Run the TurboVec RAG retrieval example on a 64-bit desktop. It imports
-`IdMapIndex` from `@qvac/turbovec-ggml`, a dev dependency here, so install it
-first when running the example outside this package's dev setup:
-```bash
-npm install @qvac/turbovec-ggml
-bare examples/ragWithTurboVec.js
-```
 
 ## Benchmarking
 
@@ -460,11 +577,11 @@ Results are continuously updated with new releases to ensure up-to-date performa
 
 ## Tests
 
-Integration tests are located in [`test/integration/`](./test/integration/) and cover core embed functionality: single-file model load → embed → unload, multi-instance concurrency (two embed instances running simultaneously, repeated load/unload cycles, unloading one instance while another processes), and the public `run()` / `cancel()` lifecycle. `laya.test.js` covers `LayaDecisions` end to end: every question type, batches, CPU and GPU, request errors, cancel, and load errors. It runs when `LAYA_TEST_MODEL` points at a Laya GGUF and is skipped otherwise, since no Laya GGUF is pinned in `models.manifest.json` yet. These tests help prevent regressions and ensure the library remains stable as contributions are made to the project.
+Integration tests are located in [`test/integration/`](./test/integration/) and cover core embed functionality: single-file model load → embed → unload, multi-instance concurrency (two embed instances running simultaneously, repeated load/unload cycles, unloading one instance while another processes), and the public `run()` / `cancel()` lifecycle. `laya.test.js` covers `LayaDecisions` end to end: every question type, batches, CPU and GPU, request errors, cancel, and load errors. It runs when `LAYA_TEST_MODEL` points at a Laya GGUF and is skipped otherwise, since no Laya GGUF is pinned in `models.manifest.json` yet. `rerank.test.js` covers `Reranker` with the pinned jina-reranker-v1-tiny-en: ranking, batching, CPU and GPU, request errors, cancel, and load errors. These tests help prevent regressions and ensure the library remains stable as contributions are made to the project.
 
-C++ unit tests live under [`test/unit/`](./test/unit/) and exercise the native components at a lower level, including backend selection, single-step inference, end-to-end embedding generation, pooling, and Laya decisions. These tests validate the native implementation and help catch issues early in development. The Laya tests that run a model need a Laya GGUF, from `LAYA_TEST_MODEL` or at `models/unit-test/laya-test.gguf`, and are skipped without one.
+C++ unit tests live under [`test/unit/`](./test/unit/) and exercise the native components at a lower level, including backend selection, single-step inference, end-to-end embedding generation, pooling, Laya decisions and reranking. These tests validate the native implementation and help catch issues early in development. The Laya tests that run a model need a Laya GGUF, from `LAYA_TEST_MODEL` or at `models/unit-test/laya-test.gguf`, and are skipped without one. The rerank tests need a reranker GGUF, from `RERANK_TEST_MODEL` or at `models/unit-test/rerank-test.gguf` ([jina-reranker-v1-tiny-en](https://huggingface.co/ggml-org/models/tree/main/jina-reranker-v1-tiny-en), as CI downloads it).
 
-> **Note:** This package covers embeddings and Laya decision models. There is no text generation, tool-calling, multimodal, KV-cache, or chat-template support — those features belong to the LLM addon ([`@qvac/llm-llamacpp`](../llm-llamacpp/)).
+> **Note:** This package covers embeddings, rerankers and Laya decision models. There is no text generation, tool-calling, multimodal, KV-cache, or chat-template support — those features belong to the LLM addon ([`@qvac/llm-llamacpp`](../llm-llamacpp/)).
 
 ## Glossary
 

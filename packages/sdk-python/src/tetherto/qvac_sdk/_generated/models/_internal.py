@@ -3843,7 +3843,7 @@ class CompletionOrchestrateRequest(GeneratedBaseModel):
         CompletionOrchestrateRequestToolDialect | None,
         Field(
             alias="toolDialect",
-            description="Override auto-detected tool-call dialect. Use when name-based detection picks the wrong parser chain for your model.",
+            description="Override auto-detected tool-call dialect. Use when detection from the model name and GGUF architecture picks the wrong parser chain for your model.",
             title="CompletionOrchestrateRequestToolDialect",
         ),
     ] = None
@@ -4489,7 +4489,7 @@ class CompletionStreamRequest(GeneratedBaseModel):
         CompletionStreamRequestToolDialect | None,
         Field(
             alias="toolDialect",
-            description="Override auto-detected tool-call dialect. Use when name-based detection picks the wrong parser chain for your model.",
+            description="Override auto-detected tool-call dialect. Use when detection from the model name and GGUF architecture picks the wrong parser chain for your model.",
             title="CompletionStreamRequestToolDialect",
         ),
     ] = None
@@ -10507,6 +10507,11 @@ class LoadModelSrcRequestLlamacppCompletionModelConfigVerbosity(Enum):
     number_3 = 3
 
 
+class LoadModelSrcRequestLlamacppCompletionModelConfigCacheCheckpointStorage(Enum):
+    memory = "memory"
+    disk = "disk"
+
+
 class MainGpu(RootModel[int]):
     root: Annotated[
         int,
@@ -10814,6 +10819,44 @@ class LoadModelSrcRequestLlamacppCompletionModelConfig(GeneratedBaseModel):
             description="Enable tool calling via the model's jinja chat template. Default false."
         ),
     ] = None
+    cache_checkpoints: Annotated[
+        int | None,
+        Field(
+            description="Prompt-cache checkpoints kept per sequence on hybrid / recurrent models (Qwen3.5, Jamba, DeepSeek V4) and on sliding-window models (Gemma 3/4, gpt-oss) whose context exceeds the window, one per cached request at the end of its history (0–1024). Default 1, which serves the next turn and a regenerate; editing the user message k-th from the end without reprocessing the whole conversation needs `k + 1`. Regenerates and edits restore a checkpoint only under a caller-managed string `kvCache` key. `0` disables them. Each checkpoint holds a copy of the recurrent or sliding-window state of its sequence in host RAM (on disk with `cache_checkpoint_storage: 'disk'`), up to hundreds of MiB on larger models, so memory grows with this value and with `parallel` unless `cache_checkpoints_max_bytes` caps it. Model fit checks do not count it. The newest one is also saved in the `cacheKey` file, so a conversation reloaded in a new process continues from it. Ignored by other models.",
+            ge=0,
+            le=1024,
+        ),
+    ] = None
+    cache_checkpoints_max_bytes: Annotated[
+        int | None,
+        Field(
+            description="Byte budget for the checkpoints kept per sequence; the oldest are dropped until the rest fit. `0` (default) is unlimited. The load fails when the budget cannot hold `cache_checkpoints` checkpoints of the largest size the context allows (on a sliding-window model, a full window).",
+            ge=0,
+            le=9007199254740991,
+        ),
+    ] = None
+    cache_checkpoint_storage: Annotated[
+        LoadModelSrcRequestLlamacppCompletionModelConfigCacheCheckpointStorage | None,
+        Field(
+            description="Where checkpoints and the per-request rollback snapshot are kept: `'memory'` (default) in host RAM, `'disk'` in files under `cache_checkpoint_dir`, which it requires.",
+            title="LoadModelSrcRequestLlamacppCompletionModelConfigCacheCheckpointStorage",
+        ),
+    ] = None
+    cache_checkpoint_dir: Annotated[
+        str | None,
+        Field(
+            description="Writable directory for checkpoint files, required with `cache_checkpoint_storage: 'disk'` and rejected without it. The addon writes in a private directory it creates inside it (on Windows, in the directory itself). On mobile, pass the app's cache directory.",
+            min_length=1,
+        ),
+    ] = None
+    cache_ram_mib: Annotated[
+        int | None,
+        Field(
+            description="Host-RAM budget, in MiB, for cached conversations that are not running (0–1048576). Default 0 (off). A conversation the model switches away from (another `kvCache` key, or a slot eviction with `parallel >= 2`) is kept in RAM, so returning to its caller-managed string `kvCache` key skips reading its `cacheKey` file. Model fit checks do not count this memory.",
+            ge=0,
+            le=1048576,
+        ),
+    ] = None
     cache_type_k: Annotated[
         str | None,
         Field(
@@ -10941,6 +10984,23 @@ class LoadModelSrcRequestLlamacppCompletionModelConfig(GeneratedBaseModel):
             le=18446744073709,
         ),
     ] = None
+    poll: Annotated[
+        int | None,
+        Field(
+            description="CPU polling level, from 0 to 100. If omitted, uses the default native behavior. Higher values may reduce wake latency but consume more CPU during GPU work.",
+            ge=0,
+            le=100,
+        ),
+    ] = None
+    poll_batch: Annotated[
+        int | None,
+        Field(
+            alias="pollBatch",
+            description="CPU polling level for batch processing, from 0 to 100. If omitted, uses the default native behavior.",
+            ge=0,
+            le=100,
+        ),
+    ] = None
     threads: Annotated[
         int | None,
         Field(
@@ -10953,7 +11013,7 @@ class LoadModelSrcRequestLlamacppCompletionModelConfig(GeneratedBaseModel):
         int | None,
         Field(
             alias="threads-batch",
-            description="CPU threads to use during batch and prompt processing. Setting it governs generation too and discards `threads` and `cpu-mask`; leave it unset for `threads` to apply to both.",
+            description="CPU threads to use during batch and prompt processing. Applies to steps processing several tokens, including parallel decoding and speculative verification. Single-sequence generation uses `threads`.",
             ge=-9007199254740991,
             le=9007199254740991,
         ),
@@ -10962,14 +11022,14 @@ class LoadModelSrcRequestLlamacppCompletionModelConfig(GeneratedBaseModel):
         str | None,
         Field(
             alias="cpu-mask",
-            description="CPU affinity mask as an arbitrarily long hex string, e.g. `'ff'`. Unset applies no affinity. Ignored when `threads-batch` is set.",
+            description="CPU affinity mask as an arbitrarily long hex string, e.g. `'ff'`. Applies to generation. Unset applies no affinity.",
         ),
     ] = None
     cpu_mask_batch: Annotated[
         str | None,
         Field(
             alias="cpu-mask-batch",
-            description="CPU affinity mask for batch and prompt processing, in the same form as `cpu-mask`. Honoured only alongside `threads-batch`; without it `cpu-mask` takes over.",
+            description="CPU affinity mask for batch and prompt processing, in the same form as `cpu-mask`. Unset inherits `cpu-mask` when the batch thread count is also unset.",
         ),
     ] = None
     override_tensor: Annotated[
@@ -11948,7 +12008,7 @@ class LoadModelSrcRequestBciWhispercppTranscriptionModelConfig(GeneratedBaseMode
         str | None,
         Field(
             alias="backendsDir",
-            description="Android only: override the default ggml backend prebuilds directory. Defaults to `<addon>/prebuilds`.",
+            description="Android and Linux: the directory scanned, as given, for the ggml backend modules. Defaults to the directory next to the loaded addon module.",
         ),
     ] = None
     embedder_model_src: Annotated[
@@ -12451,7 +12511,6 @@ class LoadModelSrcRequestLlamacppEmbeddingModelConfigPooling(Enum):
     mean = "mean"
     cls = "cls"
     last = "last"
-    rank = "rank"
 
 
 class LoadModelSrcRequestLlamacppEmbeddingModelConfigAttention(Enum):
@@ -12483,6 +12542,23 @@ class LoadModelSrcRequestLlamacppEmbeddingModelConfigVerbosity(Enum):
 
 
 class LoadModelSrcRequestLlamacppEmbeddingModelConfig(GeneratedBaseModel):
+    poll: Annotated[
+        int | None,
+        Field(
+            description="CPU polling level, from 0 to 100. If omitted, uses the default native behavior. Higher values may reduce wake latency but consume more CPU during GPU work.",
+            ge=0,
+            le=100,
+        ),
+    ] = None
+    poll_batch: Annotated[
+        int | None,
+        Field(
+            alias="pollBatch",
+            description="CPU polling level for batch processing, from 0 to 100. If omitted, uses the default native behavior.",
+            ge=0,
+            le=100,
+        ),
+    ] = None
     backend: Annotated[
         list[LoadModelSrcRequestLlamacppEmbeddingModelConfigBackendItem] | None,
         Field(
@@ -12518,7 +12594,7 @@ class LoadModelSrcRequestLlamacppEmbeddingModelConfig(GeneratedBaseModel):
     pooling: Annotated[
         LoadModelSrcRequestLlamacppEmbeddingModelConfigPooling | None,
         Field(
-            description="Pooling strategy collapsing token embeddings into one sequence vector: `'none'`, `'mean'`, `'cls'`, `'last'`, or `'rank'`. Unset uses the model default.",
+            description="Pooling strategy collapsing token embeddings into one sequence vector: `'none'`, `'mean'`, `'cls'`, or `'last'`. Unset uses the model default.",
             title="LoadModelSrcRequestLlamacppEmbeddingModelConfigPooling",
         ),
     ] = None
@@ -12705,6 +12781,23 @@ class LoadModelSrcRequestLlamacppDecisionModelConfig(GeneratedBaseModel):
             description="Tokens per forward pass. Default 2048; each sequence must fit.",
             gt=0,
             le=9007199254740991,
+        ),
+    ] = None
+    poll: Annotated[
+        int | None,
+        Field(
+            description="CPU polling level, from 0 to 100. If omitted, uses the default native behavior. Higher values may reduce wake latency but consume more CPU during GPU work.",
+            ge=0,
+            le=100,
+        ),
+    ] = None
+    poll_batch: Annotated[
+        int | None,
+        Field(
+            alias="pollBatch",
+            description="CPU polling level for batch processing, from 0 to 100. If omitted, uses the default native behavior.",
+            ge=0,
+            le=100,
         ),
     ] = None
     threads: Annotated[
