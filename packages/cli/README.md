@@ -106,8 +106,11 @@ qvac doctor [options]
   inspect current-host x64/arm64 prebuilds in the installed SDK dependency tree,
   before starting a worker. Checks `$ORIGIN`/RUNPATH, `LD_LIBRARY_PATH`, the
   loader cache and standard library directories. Missing required libraries
-  fail the check; optional GPU/RPC backend requirements are warnings. Fabric's
-  declared provider and preload are checked by SONAME, not by filename.
+  identify the requesting package and binary. They fail the check only if the
+  SDK heartbeat also fails; otherwise they remain warnings for unused plugins
+  or loader paths the static scan cannot resolve. Optional GPU/RPC backend
+  requirements are warnings. Bare providers are matched by SONAME within the
+  requesting package's dependency closure, not by filename or package name.
   Unresolved package dependencies produce a separate warning, never an OS
   package recommendation. The scan is limited to 15 seconds and does not check
   symbol versions or replace the heartbeat. If binutils is unavailable or the
